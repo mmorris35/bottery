@@ -144,8 +144,14 @@ echo "==========================================="
 export TELEGRAM_BOT_TOKEN
 export ANTHROPIC_API_KEY
 
-exec script -q /dev/null -c "claude \
-  --dangerously-skip-permissions \
+# Use claude46 wrapper if available, fall back to claude
+if command -v claude46 &>/dev/null; then
+  CLAUDE_CMD="claude46"
+else
+  CLAUDE_CMD="claude --model $CLAUDE_MODEL --dangerously-skip-permissions"
+fi
+
+exec script -q /dev/null -c "$CLAUDE_CMD \
   --channels plugin:telegram \
   $SESSION_ARGS \
   2>&1 | tee /bot/logs/$PERSONA_NAME.log"
