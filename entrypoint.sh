@@ -214,9 +214,6 @@ cat > "$HOME/.claude/settings.json" <<'USERSET'
 }
 USERSET
 
-# --- Install Telegram plugin (doesn't persist across container restarts) ---
-claude plugin install telegram@claude-plugins-official 2>/dev/null || true
-
 # --- Authentication ---
 # Two modes: API key (ANTHROPIC_API_KEY set) or Claude Max/Team (claude auth login)
 if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
@@ -235,6 +232,10 @@ elif [[ "$AUTH_MODE" == "login" ]]; then
   fi
   echo "  Auth:     Claude Max/Team (logged in)"
 fi
+
+# --- Install Telegram plugin (must run after auth, doesn't persist across restarts) ---
+echo "  Plugin:   Installing telegram..."
+claude plugin install telegram@claude-plugins-official 2>&1 || echo "  Plugin:   WARNING - telegram install failed"
 
 # Use claude46 wrapper if available, fall back to claude
 if command -v claude46 &>/dev/null; then
