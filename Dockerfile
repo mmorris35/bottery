@@ -30,4 +30,6 @@ ENV HOME=/home/botuser
 RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/home/botuser/.local/bin:$PATH"
 
+RUN claude plugin install telegram@claude-plugins-official || true
+
 ENTRYPOINT ["/entrypoint.sh"]
