@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PATH="$HOME/.local/bin:$PATH"
+
 : "${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}"
 : "${OWNER_CHAT_ID:?OWNER_CHAT_ID is required}"
 : "${PERSONA_NAME:?PERSONA_NAME is required}"
@@ -9,6 +11,7 @@ CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-4-6}"
 GROUP_CHAT_ID="${GROUP_CHAT_ID:-}"
 NELLIE_URL="${NELLIE_URL:-}"
 BEERCAN_URL="${BEERCAN_URL:-}"
+AUTH_MODE="${AUTH_MODE:-auto}"
 
 mkdir -p /bot/.claude/channels/telegram /bot/logs /bot/wiki/pages
 
@@ -82,48 +85,35 @@ fi
 # Strip trailing comma from MCP block
 MCP_BLOCK="${MCP_BLOCK%,}"
 
-cat > /bot/.claude/settings.json <<SETTINGS
-{
-  "permissions": {
-    "allow": [
-      "Edit",
-      "MultiEdit",
-      "Write(*)",
-      "Read",
-      "Bash(*)",
-      "Glob(*)",
-      "Grep(*)",
-      "Agent(*)",
-      "mcp__plugin_telegram_telegram__*",
-      ${MCP_PERMS}"__sentinel__"
-    ],
-    "deny": [
-      "Read(//**/.env)",
-      "Read(//**/.env.*)",
-      "Read(//**/.env.local)",
-      "Read(//**/.env.production)",
-      "Read(//**/credentials.json)",
-      "Bash(reboot:*)",
-      "Bash(shutdown:*)",
-      "Bash(poweroff:*)"
-    ],
-    "defaultMode": "dontAsk"
-  },
-  "enabledPlugins": {
-    "telegram@claude-plugins-official": true
-  },
-  "alwaysThinkingEnabled": true,
-  "effortLevel": "max",
-  "fastMode": false,
-  "skipDangerousModePermissionPrompt": true,
-  "mcpServers": {
-    ${MCP_BLOCK}
-  }
-}
-SETTINGS
+# Build allow list
+EXTRA_PERMS=""
+if [[ -n "$MCP_PERMS" ]]; then
+  EXTRA_PERMS=",${MCP_PERMS%,}"
+fi
 
-# Remove the sentinel from allow list
-sed -i 's/,"__sentinel__"//g; s/"__sentinel__"//g' /bot/.claude/settings.json
+node -e "
+const s = {
+  permissions: {
+    allow: [
+      'Edit','MultiEdit','Write(*)','Read','Bash(*)','Glob(*)','Grep(*)','Agent(*)',
+      'mcp__plugin_telegram_telegram__*'${EXTRA_PERMS}
+    ],
+    deny: [
+      'Read(//**/.env)','Read(//**/.env.*)','Read(//**/.env.local)',
+      'Read(//**/.env.production)','Read(//**/credentials.json)',
+      'Bash(reboot:*)','Bash(shutdown:*)','Bash(poweroff:*)'
+    ],
+    defaultMode: 'dontAsk'
+  },
+  enabledPlugins: {'telegram@claude-plugins-official': true},
+  alwaysThinkingEnabled: true,
+  effortLevel: 'max',
+  fastMode: false,
+  skipDangerousModePermissionPrompt: true,
+  mcpServers: {${MCP_BLOCK}}
+};
+console.log(JSON.stringify(s, null, 2));
+" > /bot/.claude/settings.json
 
 # --- settings.local.json (disable cloud MCPs) ---
 cat > /bot/.claude/settings.local.json <<'LOCALSET'
@@ -197,7 +187,51 @@ echo "  Wiki:     $WIKI_PAGES pages"
 echo "==========================================="
 
 export TELEGRAM_BOT_TOKEN
-export ANTHROPIC_API_KEY
+
+# --- User-level config (skip onboarding) ---
+mkdir -p "$HOME/.claude"
+cat > "$HOME/.claude.json" <<'DOTCLAUDE'
+{
+  "numStartups": 1,
+  "hasCompletedOnboarding": true,
+  "lastOnboardingVersion": "2.1.119",
+  "installMethod": "native",
+  "autoUpdates": false,
+  "projects": {
+    "/bot": {
+      "allowedTools": [],
+      "hasTrustDialogAccepted": true,
+      "hasCompletedProjectOnboarding": true,
+      "projectOnboardingSeenCount": 1
+    }
+  }
+}
+DOTCLAUDE
+
+cat > "$HOME/.claude/settings.json" <<'USERSET'
+{
+  "skipDangerousModePermissionPrompt": true
+}
+USERSET
+
+# --- Authentication ---
+# Two modes: API key (ANTHROPIC_API_KEY set) or Claude Max/Team (claude auth login)
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  export ANTHROPIC_API_KEY
+  echo "  Auth:     API key"
+elif [[ "$AUTH_MODE" == "login" ]]; then
+  if [[ -n "${CREDENTIALS_B64:-}" ]]; then
+    mkdir -p "$HOME/.claude"
+    echo "$CREDENTIALS_B64" | base64 -d > "$HOME/.claude/.credentials.json"
+    echo "  Auth:     Credentials restored from env"
+  elif claude auth status &>/dev/null; then
+    echo "  Auth:     Already logged in"
+  else
+    echo "  Auth:     Starting interactive login..."
+    claude auth login 2>&1
+  fi
+  echo "  Auth:     Claude Max/Team (logged in)"
+fi
 
 # Use claude46 wrapper if available, fall back to claude
 if command -v claude46 &>/dev/null; then
@@ -206,7 +240,6 @@ else
   CLAUDE_CMD="claude --model $CLAUDE_MODEL --dangerously-skip-permissions"
 fi
 
-exec script -q /dev/null -c "$CLAUDE_CMD \
-  --channels plugin:telegram \
-  $SESSION_ARGS \
-  2>&1 | tee /bot/logs/$PERSONA_NAME.log"
+exec script -q /bot/logs/$PERSONA_NAME.log -c "$CLAUDE_CMD \
+  --channels plugin:telegram@claude-plugins-official \
+  $SESSION_ARGS"
