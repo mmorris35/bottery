@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 
 : "${TELEGRAM_BOT_TOKEN:?TELEGRAM_BOT_TOKEN is required}"
 : "${OWNER_CHAT_ID:?OWNER_CHAT_ID is required}"
@@ -14,6 +14,7 @@ BEERCAN_URL="${BEERCAN_URL:-}"
 AUTH_MODE="${AUTH_MODE:-auto}"
 
 mkdir -p /bot/.claude/channels/telegram /bot/logs /bot/wiki/pages
+mkdir -p "$HOME/.claude/channels/telegram"
 
 # --- Generate CLAUDE.md from persona + wiki system ---
 # Persona can come from a mounted file or base64 env var (for Azure Container Apps)
@@ -144,20 +145,18 @@ if [[ -n "$NELLIE_URL" || -n "$BEERCAN_URL" ]]; then
 MCP
 fi
 
-# --- access.json ---
-ALLOW_FROM="[{\"id\":\"$OWNER_CHAT_ID\",\"name\":\"owner\"}]"
-
+# --- access.json (flat format matching telegram plugin expectations) ---
 GROUP_BLOCK=""
 if [[ -n "$GROUP_CHAT_ID" ]]; then
   MENTION_PATTERN=$(echo "$PERSONA_NAME" | tr '[:upper:]' '[:lower:]')
-  GROUP_BLOCK=",\"groups\":{\"allowFrom\":[{\"id\":\"$GROUP_CHAT_ID\",\"name\":\"group\"}],\"mentionPatterns\":[\"$MENTION_PATTERN\",\"@$MENTION_PATTERN\"]}"
+  GROUP_BLOCK=",\"groups\":{\"$GROUP_CHAT_ID\":{\"requireMention\":true,\"allowFrom\":[]}},\"mentionPatterns\":[\"$MENTION_PATTERN\",\"@$MENTION_PATTERN\"]"
 fi
 
 cat > /bot/.claude/channels/telegram/access.json <<ACCESS
 {
-  "directMessages": {
-    "allowFrom": $ALLOW_FROM
-  }${GROUP_BLOCK}
+  "dmPolicy": "allowlist",
+  "allowFrom": ["$OWNER_CHAT_ID"],
+  "pending": {}${GROUP_BLOCK}
 }
 ACCESS
 
@@ -166,10 +165,12 @@ cat > /bot/.claude/channels/telegram/model.env <<MODELENV
 CLAUDE_MODEL=$CLAUDE_MODEL
 MODELENV
 
-# --- Telegram channel .env (plugin reads token from here) ---
-cat > /bot/.claude/channels/telegram/.env <<TGENV
+# --- Telegram channel .env (plugin reads token from $HOME path) ---
+cat > "$HOME/.claude/channels/telegram/.env" <<TGENV
 TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
 TGENV
+cp "$HOME/.claude/channels/telegram/.env" /bot/.claude/channels/telegram/.env
+cp /bot/.claude/channels/telegram/access.json "$HOME/.claude/channels/telegram/access.json"
 
 # --- Session resume support ---
 SESSION_FILE="/bot/logs/session-id"
@@ -238,9 +239,8 @@ elif [[ "$AUTH_MODE" == "login" ]]; then
   echo "  Auth:     Claude Max/Team (logged in)"
 fi
 
-# --- Install Telegram plugin (must run after auth, doesn't persist across restarts) ---
-echo "  Plugin:   Installing telegram..."
-script -q /dev/null -c "claude plugin install telegram@claude-plugins-official" >> /bot/logs/plugin-install.log 2>&1 && echo "  Plugin:   telegram installed" || echo "  Plugin:   WARNING - telegram install failed (see /bot/logs/plugin-install.log)"
+# --- Telegram plugin is pre-baked in the Docker image (no runtime install needed) ---
+echo "  Plugin:   telegram (pre-installed)"
 
 # Use claude46 wrapper if available, fall back to claude
 if command -v claude46 &>/dev/null; then

@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "plugins": {
+    "telegram@claude-plugins-official": [
+      {
+        "scope": "user",
+        "installPath": "/home/botuser/.claude/plugins/cache/claude-plugins-official/telegram/0.0.6",
+        "version": "0.0.6",
+        "installedAt": "2026-04-20T23:28:18.029Z",
+        "lastUpdated": "2026-04-20T23:28:18.029Z"
+      }
+    ]
+  }
+}

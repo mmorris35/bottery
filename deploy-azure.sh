@@ -28,11 +28,13 @@ Options:
   --model MODEL    Claude model (default: claude-opus-4-6)
   --name NAME      Container app name (default: bottery-<persona>)
   --rebuild        Force rebuild of container image in ACR
+  --auth-login     Use claude auth login (Max/Team plan, no API key)
   --subscription S Azure subscription ID
   -h, --help       Show this help
 
 Environment:
-  ANTHROPIC_API_KEY    Required. Your Anthropic API key.
+  ANTHROPIC_API_KEY    Optional. Your Anthropic API key.
+                       If not set, uses claude auth login (Max/Team plan).
 
 Prerequisites:
   - Azure CLI (az) installed and logged in
@@ -104,6 +106,7 @@ BEERCAN_URL=""
 CLAUDE_MODEL="claude-opus-4-6"
 APP_NAME=""
 REBUILD=false
+AUTH_LOGIN=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -113,6 +116,7 @@ while [[ $# -gt 0 ]]; do
     --model)        CLAUDE_MODEL="$2"; shift 2 ;;
     --name)         APP_NAME="$2"; shift 2 ;;
     --rebuild)      REBUILD=true; shift ;;
+    --auth-login)   AUTH_LOGIN=true; shift ;;
     --subscription) az account set --subscription "$2"; shift 2 ;;
     -h|--help)      usage ;;
     *)              echo "Unknown option: $1"; usage ;;
@@ -121,7 +125,10 @@ done
 
 # --- Validate ---
 
-: "${ANTHROPIC_API_KEY:?Set ANTHROPIC_API_KEY before running deploy-azure.sh}"
+if ! $AUTH_LOGIN && [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+  echo "Error: Set ANTHROPIC_API_KEY or use --auth-login for Max/Team plans"
+  exit 1
+fi
 
 PERSONA_UPPER=$(echo "$PERSONA" | tr '[:lower:]' '[:upper:]')
 PERSONA_LOWER=$(echo "$PERSONA" | tr '[:upper:]' '[:lower:]')
@@ -152,11 +159,16 @@ ACR_PASSWORD=$(az acr credential show --name "$ACR_NAME" --query "passwords[0].v
 
 ENV_VARS=(
   "TELEGRAM_BOT_TOKEN=$BOT_TOKEN"
-  "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
   "OWNER_CHAT_ID=$OWNER_CHAT_ID"
   "PERSONA_NAME=$PERSONA_UPPER"
   "CLAUDE_MODEL=$CLAUDE_MODEL"
 )
+
+if $AUTH_LOGIN; then
+  ENV_VARS+=("AUTH_MODE=login")
+else
+  ENV_VARS+=("ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY")
+fi
 
 # Inject persona as base64 (ACA can't mount host files)
 PERSONA_B64=$(base64 < "$PERSONA_FILE" | tr -d '\n')
@@ -215,4 +227,14 @@ echo "  App:           $APP_NAME"
 echo "  Resource group: $RESOURCE_GROUP"
 echo "  Image:         $ACR_LOGIN_SERVER/$IMAGE"
 echo "  Logs:          az containerapp logs show -n $APP_NAME -g $RESOURCE_GROUP --follow"
+
+if $AUTH_LOGIN; then
+  echo ""
+  echo "  AUTH REQUIRED: Watch logs for the device code URL:"
+  echo "    az containerapp logs show -n $APP_NAME -g $RESOURCE_GROUP --follow"
+  echo "  Then complete auth at the URL shown."
+  echo ""
+  echo "  To auth via exec instead:"
+  echo "    az containerapp exec -n $APP_NAME -g $RESOURCE_GROUP -- claude auth login"
+fi
 echo ""

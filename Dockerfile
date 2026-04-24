@@ -7,9 +7,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://bun.sh/install | bash
-ENV PATH="/root/.bun/bin:$PATH"
-
 RUN useradd -m -s /bin/bash botuser
 
 RUN mkdir -p /bot/.claude/channels/telegram /bot/.claude/commands /bot/.claude/wiki /bot/logs /bot/wiki/pages
@@ -27,7 +24,12 @@ RUN chown -R botuser:botuser /bot
 USER botuser
 ENV HOME=/home/botuser
 
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/home/botuser/.bun/bin:$PATH"
+
 RUN curl -fsSL https://claude.ai/install.sh | bash
-ENV PATH="/home/botuser/.local/bin:$PATH"
+ENV PATH="/home/botuser/.local/bin:/home/botuser/.bun/bin:$PATH"
+
+COPY --chown=botuser:botuser plugins/ /home/botuser/.claude/plugins/
 
 ENTRYPOINT ["/entrypoint.sh"]
