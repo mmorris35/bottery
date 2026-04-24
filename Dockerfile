@@ -11,9 +11,10 @@ ENV PATH="/root/.bun/bin:$PATH"
 
 RUN npm install -g @anthropic-ai/claude-code@latest
 
-RUN mkdir -p /bot/.claude/channels/telegram /bot/.claude/commands /bot/logs
+RUN mkdir -p /bot/.claude/channels/telegram /bot/.claude/commands /bot/.claude/wiki /bot/logs /bot/wiki/pages
 
 COPY commands/ /bot/.claude/commands/
+COPY wiki/ /bot/.claude/wiki/
 
 WORKDIR /bot
 

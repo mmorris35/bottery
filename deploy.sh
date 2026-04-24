@@ -148,13 +148,15 @@ $DOCKER_CMD run -d \
   --name "$CONTAINER_NAME" \
   --restart unless-stopped \
   -v "$VOLUME_NAME:/bot/logs" \
-  -v "$PERSONA_FILE:/bot/CLAUDE.md:ro" \
+  -v "$PERSONA_FILE:/bot/persona.md:ro" \
+  -v "${VOLUME_NAME}-wiki:/bot/wiki" \
   "${ENV_ARGS[@]}" \
   "$IMAGE_NAME"
 
 echo ""
 echo "=== $PERSONA_UPPER deployed ==="
 echo "  Container: $CONTAINER_NAME"
-echo "  Volume:    $VOLUME_NAME"
+echo "  Logs vol:  $VOLUME_NAME"
+echo "  Wiki vol:  ${VOLUME_NAME}-wiki"
 echo "  Logs:      docker logs -f $CONTAINER_NAME"
 echo ""

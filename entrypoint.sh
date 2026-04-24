@@ -10,7 +10,54 @@ GROUP_CHAT_ID="${GROUP_CHAT_ID:-}"
 NELLIE_URL="${NELLIE_URL:-}"
 BEERCAN_URL="${BEERCAN_URL:-}"
 
-mkdir -p /bot/.claude/channels/telegram /bot/logs
+mkdir -p /bot/.claude/channels/telegram /bot/logs /bot/wiki/pages
+
+# --- Generate CLAUDE.md from persona + wiki system ---
+if [[ -f /bot/persona.md ]]; then
+  cat /bot/persona.md > /bot/CLAUDE.md
+  # Strip old wiki section if present (replaced by enhanced system)
+  sed -i '/^## Memory System (Karpathy LLM Wiki Pattern)/,/^## [^#]/{ /^## [^M]/!d; }' /bot/CLAUDE.md
+  # Append enhanced wiki system
+  printf '\n' >> /bot/CLAUDE.md
+  cat /bot/.claude/wiki/wiki-system.md >> /bot/CLAUDE.md
+fi
+
+# --- Initialize wiki structure (first boot only) ---
+if [[ ! -f /bot/wiki/purpose.md ]]; then
+  sed "s/{{PERSONA_NAME}}/$PERSONA_NAME/g" /bot/.claude/wiki/purpose.md.template > /bot/wiki/purpose.md
+fi
+
+if [[ ! -f /bot/wiki/index.md ]]; then
+  cat > /bot/wiki/index.md <<'WIKIINDEX'
+# Wiki Index
+
+Pages in this wiki, organized by category.
+
+## User
+<!-- Pages about the person you're talking to -->
+
+## People
+<!-- Pages about people the user mentions -->
+
+## Projects
+<!-- Pages about projects and initiatives -->
+
+## Concepts
+<!-- Pages about topics, technologies, methodologies -->
+
+## Documents
+<!-- Pages generated from ingested documents -->
+WIKIINDEX
+fi
+
+if [[ ! -f /bot/wiki/sources.json ]]; then
+  echo '{"sources":[]}' > /bot/wiki/sources.json
+fi
+
+if [[ ! -f /bot/wiki/log.md ]]; then
+  echo "# Wiki Log" > /bot/wiki/log.md
+  echo "" >> /bot/wiki/log.md
+fi
 
 # --- settings.json ---
 MCP_BLOCK=""
@@ -133,12 +180,14 @@ if [[ -f "$SESSION_FILE" ]]; then
   echo "Resuming session: $SESSION_ID"
 fi
 
+WIKI_PAGES=$(find /bot/wiki/pages -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
 echo "=== Bottery: Starting $PERSONA_NAME ==="
 echo "  Model:    $CLAUDE_MODEL"
 echo "  Owner:    $OWNER_CHAT_ID"
 echo "  Group:    ${GROUP_CHAT_ID:-none}"
 echo "  Nellie:   ${NELLIE_URL:-disabled}"
 echo "  Beer Can: ${BEERCAN_URL:-disabled}"
+echo "  Wiki:     $WIKI_PAGES pages"
 echo "==========================================="
 
 export TELEGRAM_BOT_TOKEN

@@ -1,0 +1,35 @@
+# Knowledge Scope — {{PERSONA_NAME}}
+
+This file defines what knowledge this bot should actively retain and build.
+Knowledge outside this scope should be handled in conversation but not persisted.
+
+## Identity
+
+You are **{{PERSONA_NAME}}**, a personalized AI assistant.
+
+## Knowledge Domains
+
+Retain knowledge about:
+- The user: who they are, their role, preferences, communication style
+- People the user mentions: names, roles, relationships
+- Projects and initiatives the user is involved in
+- Topics the user frequently discusses or cares about
+- Decisions made during conversations
+- Documents the user shares and their key contents
+- Corrections and updates to previously known information
+
+## Extraction Priority
+
+When processing documents or conversations, prioritize extracting:
+1. **Who** — people, teams, organizations
+2. **What** — projects, deliverables, concepts
+3. **Why** — motivations, goals, constraints
+4. **When** — deadlines, milestones, dates
+5. **Connections** — how entities relate to each other
+
+## Out of Scope
+
+Do not persist:
+- Generic knowledge you already have from training
+- Ephemeral task details (one-off questions)
+- Information the user asks you to forget
