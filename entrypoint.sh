@@ -240,7 +240,7 @@ fi
 
 # --- Install Telegram plugin (must run after auth, doesn't persist across restarts) ---
 echo "  Plugin:   Installing telegram..."
-claude plugin install telegram@claude-plugins-official 2>&1 || echo "  Plugin:   WARNING - telegram install failed"
+timeout 30 claude plugin install telegram@claude-plugins-official 2>&1 && echo "  Plugin:   telegram installed" || echo "  Plugin:   WARNING - telegram install failed (continuing anyway)"
 
 # Use claude46 wrapper if available, fall back to claude
 if command -v claude46 &>/dev/null; then
