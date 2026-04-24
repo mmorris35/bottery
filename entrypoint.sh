@@ -166,6 +166,11 @@ cat > /bot/.claude/channels/telegram/model.env <<MODELENV
 CLAUDE_MODEL=$CLAUDE_MODEL
 MODELENV
 
+# --- Telegram channel .env (plugin reads token from here) ---
+cat > /bot/.claude/channels/telegram/.env <<TGENV
+TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
+TGENV
+
 # --- Session resume support ---
 SESSION_FILE="/bot/logs/session-id"
 
