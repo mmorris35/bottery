@@ -214,6 +214,9 @@ cat > "$HOME/.claude/settings.json" <<'USERSET'
 }
 USERSET
 
+# --- Install Telegram plugin (doesn't persist across container restarts) ---
+claude plugin install telegram@claude-plugins-official 2>/dev/null || true
+
 # --- Authentication ---
 # Two modes: API key (ANTHROPIC_API_KEY set) or Claude Max/Team (claude auth login)
 if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
