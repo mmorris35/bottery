@@ -13,8 +13,14 @@ BEERCAN_URL="${BEERCAN_URL:-}"
 mkdir -p /bot/.claude/channels/telegram /bot/logs /bot/wiki/pages
 
 # --- Generate CLAUDE.md from persona + wiki system ---
+# Persona can come from a mounted file or base64 env var (for Azure Container Apps)
 if [[ -f /bot/persona.md ]]; then
   cat /bot/persona.md > /bot/CLAUDE.md
+elif [[ -n "${PERSONA_CONTENT_B64:-}" ]]; then
+  echo "$PERSONA_CONTENT_B64" | base64 -d > /bot/CLAUDE.md
+fi
+
+if [[ -f /bot/CLAUDE.md ]]; then
   # Strip old wiki section if present (replaced by enhanced system)
   sed -i '/^## Memory System (Karpathy LLM Wiki Pattern)/,/^## [^#]/{ /^## [^M]/!d; }' /bot/CLAUDE.md
   # Append enhanced wiki system
