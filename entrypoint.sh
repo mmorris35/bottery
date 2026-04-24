@@ -239,10 +239,8 @@ elif [[ "$AUTH_MODE" == "login" ]]; then
 fi
 
 # --- Install Telegram plugin (must run after auth, doesn't persist across restarts) ---
-rm -f "$HOME/.claude/plugins/installed_plugins.json" 2>/dev/null
 echo "  Plugin:   Installing telegram..."
-claude plugin install telegram@claude-plugins-official >> /bot/logs/plugin-install.log 2>&1 && echo "  Plugin:   telegram installed" || echo "  Plugin:   WARNING - telegram install failed (see /bot/logs/plugin-install.log)"
-echo "  Plugin:   $(cat $HOME/.claude/plugins/installed_plugins.json 2>/dev/null || echo 'no plugins file')"
+script -q /dev/null -c "claude plugin install telegram@claude-plugins-official" >> /bot/logs/plugin-install.log 2>&1 && echo "  Plugin:   telegram installed" || echo "  Plugin:   WARNING - telegram install failed (see /bot/logs/plugin-install.log)"
 
 # Use claude46 wrapper if available, fall back to claude
 if command -v claude46 &>/dev/null; then
