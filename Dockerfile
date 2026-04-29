@@ -9,6 +9,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN useradd -m -s /bin/bash botuser
 
+RUN mkdir -p /etc/claude-code && \
+    echo '{"channelsEnabled": true}' > /etc/claude-code/managed-settings.json
+
 RUN mkdir -p /bot/.claude/channels/telegram /bot/.claude/commands /bot/.claude/wiki /bot/logs /bot/wiki/pages
 
 COPY --chown=botuser:botuser commands/ /bot/.claude/commands/
