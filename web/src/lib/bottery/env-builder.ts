@@ -29,15 +29,18 @@ export function buildEnvVars(
     { name: "PERSONA_CONTENT_B64", value: personaB64 },
   ];
 
-  if (config.authMode === "login" && config.credentialsB64) {
-    secrets.push({
-      name: "credentials-b64",
-      value: config.credentialsB64,
-    });
-    envVars.push(
-      { name: "AUTH_MODE", value: "login" },
-      { name: "CREDENTIALS_B64", secretRef: "credentials-b64" }
-    );
+  if (config.authMode === "login") {
+    const creds = config.credentialsB64 || process.env.DEFAULT_CREDENTIALS_B64 || "";
+    if (creds) {
+      secrets.push({
+        name: "credentials-b64",
+        value: creds,
+      });
+      envVars.push(
+        { name: "AUTH_MODE", value: "login" },
+        { name: "CREDENTIALS_B64", secretRef: "credentials-b64" }
+      );
+    }
   } else if (config.authMode === "api-key" && config.anthropicApiKey) {
     secrets.push({
       name: "anthropic-api-key",

@@ -245,11 +245,11 @@ export function BotForm({ mode, initialValues, botName }: BotFormProps) {
                 type="password"
                 value={form.credentialsB64}
                 onChange={(e) => set("credentialsB64", e.target.value)}
-                placeholder="base64-encoded .credentials.json"
+                placeholder="Leave blank to use team credentials"
                 className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
               />
               <p className="mt-1 text-xs text-gray-500">
-                cat ~/.claude/.credentials.json | base64
+                Leave blank to use the default team credentials, or paste custom: cat ~/.claude/.credentials.json | base64
               </p>
             </div>
           )}
