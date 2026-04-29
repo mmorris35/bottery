@@ -329,31 +329,85 @@ export default function NewBotPage() {
           </div>
         )}
 
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-5">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">
-            Every bot ships with these built-in capabilities
+        {/* Memory System Hero */}
+        <div className="rounded-xl bg-gradient-to-br from-slate-900 to-slate-800 text-white p-6 mb-6">
+          <p className="text-xs font-medium text-blue-400 uppercase tracking-wide mb-1">
+            Built into every bot
+          </p>
+          <h3 className="text-lg font-bold mb-2">
+            Intelligent Memory System
           </h3>
+          <p className="text-sm text-slate-300 mb-5 leading-relaxed">
+            Not basic note-taking — a cross-linked knowledge engine inspired by
+            Karpathy&apos;s LLM wiki pattern. Your bot builds a personal
+            Wikipedia that grows smarter with every conversation.
+          </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="rounded-md bg-white p-3 border border-gray-100">
-              <div className="text-sm font-medium text-gray-900 mb-1">
-                Persistent Memory (Karpathy Wiki)
-              </div>
-              <p className="text-xs text-gray-500 leading-relaxed">
-                Your bot builds a personal knowledge base that grows with every
-                conversation. It remembers your projects, people, preferences,
-                and past decisions across sessions.
-              </p>
-            </div>
-            <div className="rounded-md bg-white p-3 border border-gray-100">
-              <div className="text-sm font-medium text-gray-900 mb-1">
+            <div className="rounded-lg bg-white/5 border border-white/10 p-3">
+              <div className="text-sm font-medium text-blue-400 mb-1">
                 Document Ingestion
               </div>
-              <p className="text-xs text-gray-500 leading-relaxed">
-                Send your bot a PDF, doc, or text file and it automatically
-                extracts key entities, concepts, and relationships into
-                cross-linked wiki pages.
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Send a PDF, doc, or text file — your bot auto-extracts
+                entities, concepts, and relationships into cross-linked wiki
+                pages. SHA256 deduplication prevents reprocessing.
               </p>
             </div>
+            <div className="rounded-lg bg-white/5 border border-white/10 p-3">
+              <div className="text-sm font-medium text-blue-400 mb-1">
+                Knowledge-Aware Responses
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Before answering substantive questions, your bot searches its
+                wiki using multi-signal retrieval — title match, content match,
+                cross-references, shared sources, and recency.
+              </p>
+            </div>
+            <div className="rounded-lg bg-white/5 border border-white/10 p-3">
+              <div className="text-sm font-medium text-blue-400 mb-1">
+                Continuous Building
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                New person mentioned? Wiki page. New project? Wiki page.
+                Decision made? Recorded. Correction from you? Immediately
+                updated. Knowledge compounds automatically.
+              </p>
+            </div>
+            <div className="rounded-lg bg-white/5 border border-white/10 p-3">
+              <div className="text-sm font-medium text-blue-400 mb-1">
+                Gap Detection
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Your bot notices when topics come up repeatedly without a wiki
+                page and proactively asks for a briefing. Broken cross-references
+                and stale pages are flagged automatically.
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 rounded-lg bg-black/30 border border-white/10 p-4">
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">
+              Persistent Wiki Structure
+            </p>
+            <pre className="text-xs text-slate-400 font-mono leading-relaxed">
+{`/bot/wiki/
+  purpose.md      Scoped to your persona's domain
+  index.md        Master catalog of all pages
+  sources.json    SHA256 manifest — no reprocessing
+  pages/
+    people/       Profiles of people you mention
+    projects/     Goals, status, decisions, blockers
+    concepts/     Definitions and relationships
+    documents/    Extracted knowledge from files`}
+            </pre>
+          </div>
+        </div>
+
+        {/* Additional capabilities */}
+        <div className="rounded-lg border border-gray-200 bg-gray-50 p-5">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">
+            Also included
+          </h3>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="rounded-md bg-white p-3 border border-gray-100">
               <div className="text-sm font-medium text-gray-900 mb-1">
                 /decide — Decision Analysis
@@ -366,12 +420,22 @@ export default function NewBotPage() {
             </div>
             <div className="rounded-md bg-white p-3 border border-gray-100">
               <div className="text-sm font-medium text-gray-900 mb-1">
-                Knowledge Retrieval
+                Prompt Injection Hardening
               </div>
               <p className="text-xs text-gray-500 leading-relaxed">
-                Before answering substantive questions, your bot automatically
-                searches its wiki for relevant context. It gets smarter over
-                time.
+                Command authority locked to the owner. External web content
+                treated as data, never instructions. Hidden injection patterns
+                explicitly blocked.
+              </p>
+            </div>
+            <div className="rounded-md bg-white p-3 border border-gray-100">
+              <div className="text-sm font-medium text-gray-900 mb-1">
+                Session Persistence
+              </div>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Wiki pages, ingested documents, and session logs survive
+                restarts and redeployments via persistent volumes. Your bot
+                never forgets.
               </p>
             </div>
           </div>
