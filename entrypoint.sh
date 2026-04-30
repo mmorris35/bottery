@@ -261,8 +261,26 @@ if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
 elif [[ "$AUTH_MODE" == "login" ]]; then
   if [[ -n "${CREDENTIALS_B64:-}" ]]; then
     mkdir -p "$HOME/.claude"
-    echo "$CREDENTIALS_B64" | base64 -d > "$HOME/.claude/.credentials.json"
-    echo "  Auth:     Credentials restored from env"
+    # Check if persistent credentials exist and are newer than env var
+    if [[ -f "$HOME/.claude/.credentials.json" ]] && [[ -s "$HOME/.claude/.credentials.json" ]]; then
+      PERSISTED_EXPIRY=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('$HOME/.claude/.credentials.json','utf8'));console.log(d.claudeAiOauth?.expiresAt||0)}catch{console.log(0)}" 2>/dev/null)
+      ENV_EXPIRY=$(echo "$CREDENTIALS_B64" | base64 -d | node -e "try{let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const j=JSON.parse(d);console.log(j.claudeAiOauth?.expiresAt||0)})}catch{console.log(0)}" 2>/dev/null)
+      if [[ "$PERSISTED_EXPIRY" -gt "$ENV_EXPIRY" ]]; then
+        echo "  Auth:     Using persisted credentials (newer than env)"
+      else
+        echo "$CREDENTIALS_B64" | base64 -d > "$HOME/.claude/.credentials.json"
+        echo "  Auth:     Credentials restored from env"
+      fi
+    else
+      echo "$CREDENTIALS_B64" | base64 -d > "$HOME/.claude/.credentials.json"
+      echo "  Auth:     Credentials restored from env"
+    fi
+    # Trigger token refresh if expired — CC refreshes on auth status check
+    if claude auth status &>/dev/null; then
+      echo "  Auth:     Token valid"
+    else
+      echo "  Auth:     Token may need refresh (CC will auto-refresh on first API call)"
+    fi
   elif claude auth status &>/dev/null; then
     echo "  Auth:     Already logged in"
   else
