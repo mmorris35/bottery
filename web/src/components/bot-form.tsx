@@ -20,8 +20,6 @@ interface FormValues {
   anthropicApiKey: string;
   credentialsB64: string;
   groupChatId: string;
-  nellieUrl: string;
-  beercanUrl: string;
   teamworkApiToken: string;
 }
 
@@ -57,8 +55,6 @@ export function BotForm({ mode, initialValues, botName }: BotFormProps) {
     anthropicApiKey: initialValues?.anthropicApiKey ?? "",
     credentialsB64: initialValues?.credentialsB64 ?? "",
     groupChatId: initialValues?.groupChatId ?? "",
-    nellieUrl: initialValues?.nellieUrl ?? "",
-    beercanUrl: initialValues?.beercanUrl ?? "",
     teamworkApiToken: initialValues?.teamworkApiToken ?? "",
   });
 
@@ -83,8 +79,6 @@ export function BotForm({ mode, initialValues, botName }: BotFormProps) {
               claudeModel: form.claudeModel,
               personaContent: form.personaContent,
               groupChatId: form.groupChatId,
-              nellieUrl: form.nellieUrl,
-              beercanUrl: form.beercanUrl,
               teamworkApiToken: form.teamworkApiToken,
             };
 
@@ -273,35 +267,11 @@ export function BotForm({ mode, initialValues, botName }: BotFormProps) {
         </section>
       )}
 
-      {/* MCP */}
+      {/* Integrations */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold text-gray-900">
-          MCP Connections (optional)
+          Integrations (optional)
         </h2>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Nellie URL
-          </label>
-          <input
-            type="url"
-            value={form.nellieUrl}
-            onChange={(e) => set("nellieUrl", e.target.value)}
-            placeholder="http://100.87.147.89:8765/sse"
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Beer Can URL
-          </label>
-          <input
-            type="url"
-            value={form.beercanUrl}
-            onChange={(e) => set("beercanUrl", e.target.value)}
-            placeholder="http://localhost:9100/sse"
-            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
-          />
-        </div>
         <div>
           <label className="block text-sm font-medium text-gray-700">
             Teamwork API Token
