@@ -33,8 +33,6 @@ export default function EditBotPage() {
           claudeModel: bot.claudeModel,
           ownerChatId: bot.ownerChatId,
           groupChatId: bot.groupChatId ?? "",
-          nellieUrl: bot.nellieUrl ?? "",
-          beercanUrl: bot.beercanUrl ?? "",
         }}
       />
     </div>
