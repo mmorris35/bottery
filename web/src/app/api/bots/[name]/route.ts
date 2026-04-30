@@ -9,6 +9,7 @@ const UpdateBotSchema = z.object({
   groupChatId: z.string().optional(),
   nellieUrl: z.string().optional(),
   beercanUrl: z.string().optional(),
+  teamworkApiToken: z.string().optional(),
 });
 
 export async function GET(

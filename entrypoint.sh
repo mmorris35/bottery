@@ -110,6 +110,11 @@ if [[ -n "$BEERCAN_URL" ]]; then
   MCP_PERMS="$MCP_PERMS\"mcp__beercan__*\","
 fi
 
+if [[ -n "${TW_MCP_BEARER_TOKEN:-}" ]]; then
+  MCP_BLOCK="$MCP_BLOCK\"teamwork\":{\"type\":\"http\",\"url\":\"https://mcp.ai.teamwork.com/\",\"headers\":{\"Authorization\":\"Bearer $TW_MCP_BEARER_TOKEN\"}},"
+  MCP_PERMS="$MCP_PERMS\"mcp__teamwork__*\","
+fi
+
 # Strip trailing comma from MCP block
 MCP_BLOCK="${MCP_BLOCK%,}"
 
@@ -216,6 +221,7 @@ echo "  Owner:    $OWNER_CHAT_ID"
 echo "  Group:    ${GROUP_CHAT_ID:-none}"
 echo "  Nellie:   ${NELLIE_URL:-disabled}"
 echo "  Beer Can: ${BEERCAN_URL:-disabled}"
+echo "  Teamwork: ${TW_MCP_BEARER_TOKEN:+enabled}${TW_MCP_BEARER_TOKEN:-disabled}"
 echo "  Wiki:     $WIKI_PAGES pages"
 echo "==========================================="
 

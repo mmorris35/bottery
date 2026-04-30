@@ -61,6 +61,16 @@ export function buildEnvVars(
   if (config.beercanUrl) {
     envVars.push({ name: "BEERCAN_URL", value: config.beercanUrl });
   }
+  if (config.teamworkApiToken) {
+    secrets.push({
+      name: "teamwork-api-token",
+      value: config.teamworkApiToken,
+    });
+    envVars.push({
+      name: "TW_MCP_BEARER_TOKEN",
+      secretRef: "teamwork-api-token",
+    });
+  }
 
   return { envVars, secrets };
 }

@@ -201,6 +201,14 @@ export async function updateBot(
     setEnv("BEERCAN_URL", config.beercanUrl);
   if (config.groupChatId !== undefined)
     setEnv("GROUP_CHAT_ID", config.groupChatId);
+  if (config.teamworkApiToken) {
+    const secretIdx = newSecrets.findIndex((s) => s.name === "teamwork-api-token");
+    if (secretIdx >= 0) newSecrets[secretIdx] = { name: "teamwork-api-token", value: config.teamworkApiToken };
+    else newSecrets.push({ name: "teamwork-api-token", value: config.teamworkApiToken });
+    const envIdx = newEnv.findIndex((e) => e.name === "TW_MCP_BEARER_TOKEN");
+    if (envIdx >= 0) newEnv[envIdx] = { name: "TW_MCP_BEARER_TOKEN", secretRef: "teamwork-api-token" };
+    else newEnv.push({ name: "TW_MCP_BEARER_TOKEN", secretRef: "teamwork-api-token" });
+  }
 
   const revisionSuffix = `v${Math.floor(Date.now() / 1000)}`;
 

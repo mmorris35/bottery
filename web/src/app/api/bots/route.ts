@@ -15,6 +15,7 @@ const CreateBotSchema = z.object({
   groupChatId: z.string().optional(),
   nellieUrl: z.string().url().optional().or(z.literal("")),
   beercanUrl: z.string().url().optional().or(z.literal("")),
+  teamworkApiToken: z.string().optional(),
 });
 
 export async function GET() {

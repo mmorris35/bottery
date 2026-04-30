@@ -10,6 +10,7 @@ export interface BotConfig {
   groupChatId?: string;
   nellieUrl?: string;
   beercanUrl?: string;
+  teamworkApiToken?: string;
 }
 
 export interface Bot {
@@ -21,6 +22,7 @@ export interface Bot {
   groupChatId?: string;
   nellieUrl?: string;
   beercanUrl?: string;
+  teamworkApiToken?: string;
   status: BotStatus;
   createdAt?: string;
   updatedAt?: string;

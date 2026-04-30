@@ -22,6 +22,7 @@ interface FormValues {
   groupChatId: string;
   nellieUrl: string;
   beercanUrl: string;
+  teamworkApiToken: string;
 }
 
 const SAMPLE_PERSONA = `# PersonaName — Telegram Bot Persona
@@ -58,6 +59,7 @@ export function BotForm({ mode, initialValues, botName }: BotFormProps) {
     groupChatId: initialValues?.groupChatId ?? "",
     nellieUrl: initialValues?.nellieUrl ?? "",
     beercanUrl: initialValues?.beercanUrl ?? "",
+    teamworkApiToken: initialValues?.teamworkApiToken ?? "",
   });
 
   function set<K extends keyof FormValues>(key: K, value: FormValues[K]) {
@@ -83,6 +85,7 @@ export function BotForm({ mode, initialValues, botName }: BotFormProps) {
               groupChatId: form.groupChatId,
               nellieUrl: form.nellieUrl,
               beercanUrl: form.beercanUrl,
+              teamworkApiToken: form.teamworkApiToken,
             };
 
       const res = await fetch(url, {
@@ -298,6 +301,21 @@ export function BotForm({ mode, initialValues, botName }: BotFormProps) {
             placeholder="http://localhost:9100/sse"
             className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
           />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">
+            Teamwork API Token
+          </label>
+          <input
+            type="password"
+            value={form.teamworkApiToken}
+            onChange={(e) => set("teamworkApiToken", e.target.value)}
+            placeholder="tw_..."
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:ring-blue-500"
+          />
+          <p className="mt-1 text-xs text-gray-500">
+            Teamwork.com bearer token — connects to mcp.ai.teamwork.com
+          </p>
         </div>
       </section>
 
