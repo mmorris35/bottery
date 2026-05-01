@@ -13,6 +13,24 @@ NELLIE_URL="${NELLIE_URL:-}"
 BEERCAN_URL="${BEERCAN_URL:-}"
 AUTH_MODE="${AUTH_MODE:-auto}"
 
+# --- Azure File Share credential bridge ---
+# ACA mounts the file share at /mnt/claude-creds (not $HOME/.claude) so that
+# $HOME/.claude stays on local ext4 where symlinks work. We seed credentials
+# from the mount and persist them back on exit.
+CREDS_MOUNT="/mnt/claude-creds"
+if [[ -d "$CREDS_MOUNT" ]]; then
+  echo "  ACA:      File share detected at $CREDS_MOUNT"
+  mkdir -p "$HOME/.claude/channels/telegram"
+  # Seed credentials from file share if they exist
+  if [[ -f "$CREDS_MOUNT/.credentials.json" ]] && [[ -s "$CREDS_MOUNT/.credentials.json" ]]; then
+    cp "$CREDS_MOUNT/.credentials.json" "$HOME/.claude/.credentials.json"
+    echo "  ACA:      Credentials seeded from file share"
+  fi
+  if [[ -f "$CREDS_MOUNT/.credentials.json.bak" ]] && [[ -s "$CREDS_MOUNT/.credentials.json.bak" ]]; then
+    cp "$CREDS_MOUNT/.credentials.json.bak" "$HOME/.claude/.credentials.json.bak"
+  fi
+fi
+
 mkdir -p /bot/.claude/channels/telegram /bot/logs /bot/wiki/pages
 mkdir -p "$HOME/.claude/channels/telegram"
 
@@ -261,18 +279,23 @@ if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
 elif [[ "$AUTH_MODE" == "login" ]]; then
   if [[ -n "${CREDENTIALS_B64:-}" ]]; then
     mkdir -p "$HOME/.claude"
+    CREDS_FILE="$HOME/.claude/.credentials.json"
+    # If creds file exists but isn't writable (e.g. docker cp left wrong uid), replace it
+    if [[ -f "$CREDS_FILE" ]] && [[ ! -w "$CREDS_FILE" ]]; then
+      rm -f "$CREDS_FILE" 2>/dev/null || true
+    fi
     # Check if persistent credentials exist and are newer than env var
-    if [[ -f "$HOME/.claude/.credentials.json" ]] && [[ -s "$HOME/.claude/.credentials.json" ]]; then
-      PERSISTED_EXPIRY=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('$HOME/.claude/.credentials.json','utf8'));console.log(d.claudeAiOauth?.expiresAt||0)}catch{console.log(0)}" 2>/dev/null)
+    if [[ -f "$CREDS_FILE" ]] && [[ -s "$CREDS_FILE" ]]; then
+      PERSISTED_EXPIRY=$(node -e "try{const d=JSON.parse(require('fs').readFileSync('$CREDS_FILE','utf8'));console.log(d.claudeAiOauth?.expiresAt||0)}catch{console.log(0)}" 2>/dev/null)
       ENV_EXPIRY=$(echo "$CREDENTIALS_B64" | base64 -d | node -e "try{let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const j=JSON.parse(d);console.log(j.claudeAiOauth?.expiresAt||0)})}catch{console.log(0)}" 2>/dev/null)
       if [[ "$PERSISTED_EXPIRY" -gt "$ENV_EXPIRY" ]]; then
         echo "  Auth:     Using persisted credentials (newer than env)"
       else
-        echo "$CREDENTIALS_B64" | base64 -d > "$HOME/.claude/.credentials.json"
+        echo "$CREDENTIALS_B64" | base64 -d > "$CREDS_FILE"
         echo "  Auth:     Credentials restored from env"
       fi
     else
-      echo "$CREDENTIALS_B64" | base64 -d > "$HOME/.claude/.credentials.json"
+      echo "$CREDENTIALS_B64" | base64 -d > "$CREDS_FILE"
       echo "  Auth:     Credentials restored from env"
     fi
     # Trigger token refresh if expired — CC refreshes on auth status check
@@ -290,16 +313,83 @@ elif [[ "$AUTH_MODE" == "login" ]]; then
   echo "  Auth:     Claude Max/Team (logged in)"
 fi
 
-# --- Telegram plugin is pre-baked in the Docker image (no runtime install needed) ---
-echo "  Plugin:   telegram (pre-installed)"
+# --- Telegram plugin: pre-built, copied to local filesystem ---
+# $HOME/.claude is on local ext4 (or symlinked from ACA file share at /mnt/claude-creds).
+# Copy the pre-built plugin so CC can create symlinks freely.
+mkdir -p "$HOME/.claude/plugins"
+cp -r /opt/bottery-plugins/* "$HOME/.claude/plugins/"
+echo "  Plugin:   telegram (copied to \$HOME/.claude/plugins)"
 
 # Use claude46 wrapper if available, fall back to claude
 if command -v claude46 &>/dev/null; then
   CLAUDE_CMD="claude46"
 else
-  CLAUDE_CMD="claude --model $CLAUDE_MODEL --dangerously-skip-permissions"
+  CLAUDE_CMD="claude --model $CLAUDE_MODEL --dangerously-skip-permissions --debug-file /bot/logs/debug.log"
 fi
 
-exec script -q /bot/logs/$PERSONA_NAME.log -c "$CLAUDE_CMD \
-  --channels plugin:telegram@claude-plugins-official \
-  $SESSION_ARGS"
+# --- Credential watchdog loop ---
+# CC can truncate the credential file to 0 bytes when a token refresh fails.
+# Instead of exec-ing directly, we run CC in a loop that backs up and restores creds.
+CREDS_FILE="$HOME/.claude/.credentials.json"
+CREDS_BACKUP="$HOME/.claude/.credentials.json.bak"
+BACKOFF=5
+MAX_BACKOFF=300
+MAX_FAILURES=20
+FAILURES=0
+
+while true; do
+  # Back up valid credentials before each launch
+  if [[ -f "$CREDS_FILE" ]] && [[ -s "$CREDS_FILE" ]]; then
+    cp "$CREDS_FILE" "$CREDS_BACKUP"
+    # Persist to ACA file share if available
+    if [[ -d "$CREDS_MOUNT" ]]; then
+      cp "$CREDS_FILE" "$CREDS_MOUNT/.credentials.json"
+      cp "$CREDS_BACKUP" "$CREDS_MOUNT/.credentials.json.bak"
+    fi
+    echo "[cred-guard] Backed up credentials ($(wc -c < "$CREDS_FILE") bytes)"
+  fi
+
+  echo "[cred-guard] Launching CC (attempt $((FAILURES + 1)))..."
+  script -q /bot/logs/$PERSONA_NAME.log -c "$CLAUDE_CMD \
+    --channels plugin:telegram@claude-plugins-official \
+    $SESSION_ARGS" || true
+
+  EXIT_TS=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  echo "[cred-guard] CC exited at $EXIT_TS"
+
+  # Check if credential file was wiped
+  if [[ ! -s "$CREDS_FILE" ]] && [[ -f "$CREDS_BACKUP" ]] && [[ -s "$CREDS_BACKUP" ]]; then
+    echo "[cred-guard] DETECTED: credential file wiped (0 bytes) — restoring from backup"
+    cp "$CREDS_BACKUP" "$CREDS_FILE"
+    echo "[cred-guard] Restored credentials ($(wc -c < "$CREDS_FILE") bytes)"
+  elif [[ ! -s "$CREDS_FILE" ]]; then
+    echo "[cred-guard] WARNING: credential file empty and no backup available"
+  fi
+
+  FAILURES=$((FAILURES + 1))
+  if [[ $FAILURES -ge $MAX_FAILURES ]]; then
+    echo "[cred-guard] FATAL: $MAX_FAILURES consecutive failures — giving up"
+    exit 1
+  fi
+
+  # Reset failure count if CC ran for more than 5 minutes (it was actually working)
+  # We detect this by checking if the log file was modified recently
+  LOG_AGE=$(( $(date +%s) - $(stat -c %Y /bot/logs/$PERSONA_NAME.log 2>/dev/null || echo 0) ))
+  if [[ $LOG_AGE -lt 10 ]]; then
+    # Log was just written — CC was running recently, likely a fresh crash
+    :
+  else
+    FAILURES=0
+    BACKOFF=5
+  fi
+
+  echo "[cred-guard] Restarting in ${BACKOFF}s..."
+  sleep "$BACKOFF"
+  BACKOFF=$(( BACKOFF * 2 ))
+  if [[ $BACKOFF -gt $MAX_BACKOFF ]]; then
+    BACKOFF=$MAX_BACKOFF
+  fi
+
+  # Clear session args for restart (start fresh session)
+  SESSION_ARGS=""
+done

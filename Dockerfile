@@ -33,6 +33,7 @@ ENV PATH="/home/botuser/.bun/bin:$PATH"
 RUN curl -fsSL https://claude.ai/install.sh | bash
 ENV PATH="/home/botuser/.local/bin:/home/botuser/.bun/bin:$PATH"
 
-COPY --chown=botuser:botuser plugins/ /home/botuser/.claude/plugins/
+COPY --chown=botuser:botuser plugins/ /opt/bottery-plugins/
+RUN cd /opt/bottery-plugins/cache/claude-plugins-official/telegram/0.0.6 && bun install
 
 ENTRYPOINT ["/entrypoint.sh"]

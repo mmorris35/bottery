@@ -154,10 +154,10 @@ export async function createBot(config: BotConfig): Promise<Bot> {
       : { name: e.name, value: e.value }
   );
 
-  const containerSecrets = secrets.map((s) => ({
-    name: s.name,
-    value: s.value,
-  }));
+  const containerSecrets = [
+    ...secrets.map((s) => ({ name: s.name, value: s.value })),
+    { name: "acr-password", value: acrPassword },
+  ];
 
   containerSecrets.push({ name: "acr-password", value: acrPassword });
 
