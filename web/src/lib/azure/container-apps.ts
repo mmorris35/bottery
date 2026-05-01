@@ -159,8 +159,6 @@ export async function createBot(config: BotConfig): Promise<Bot> {
     { name: "acr-password", value: acrPassword },
   ];
 
-  containerSecrets.push({ name: "acr-password", value: acrPassword });
-
   const storageName = await ensureBotStorage(config.personaName);
   const revisionSuffix = `v${Math.floor(Date.now() / 1000)}`;
 
@@ -192,7 +190,7 @@ export async function createBot(config: BotConfig): Promise<Bot> {
             volumeMounts: [
               {
                 volumeName: "claude-creds",
-                mountPath: "/home/botuser/.claude",
+                mountPath: "/mnt/claude-creds",
               },
             ],
           },

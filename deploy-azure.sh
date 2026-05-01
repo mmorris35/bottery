@@ -8,6 +8,7 @@ RESOURCE_GROUP="bottery-rg"
 ACR_NAME="botteryacr"
 ACR_LOGIN_SERVER="botteryacr.azurecr.io"
 ENVIRONMENT="bottery-env"
+STORAGE_ACCOUNT="botterycreds"
 IMAGE="bottery:latest"
 
 usage() {
@@ -72,6 +73,10 @@ if [[ "$1" == "--setup" ]]; then
   az acr create --resource-group "$RESOURCE_GROUP" --name "$ACR_NAME" \
     --sku Basic --admin-enabled true --output none
 
+  echo "Creating storage account for credential persistence: $STORAGE_ACCOUNT"
+  az storage account create --resource-group "$RESOURCE_GROUP" \
+    --name "$STORAGE_ACCOUNT" --location centralus --sku Standard_LRS --output none
+
   echo "Creating Container Apps environment: $ENVIRONMENT"
   az containerapp env create --resource-group "$RESOURCE_GROUP" \
     --name "$ENVIRONMENT" --location centralus --output none
@@ -82,10 +87,11 @@ if [[ "$1" == "--setup" ]]; then
 
   echo ""
   echo "=== Azure infrastructure ready ==="
-  echo "  Resource group: $RESOURCE_GROUP"
-  echo "  Registry:       $ACR_LOGIN_SERVER"
-  echo "  Environment:    $ENVIRONMENT"
-  echo "  Image:          $ACR_LOGIN_SERVER/$IMAGE"
+  echo "  Resource group:  $RESOURCE_GROUP"
+  echo "  Registry:        $ACR_LOGIN_SERVER"
+  echo "  Environment:     $ENVIRONMENT"
+  echo "  Storage account: $STORAGE_ACCOUNT"
+  echo "  Image:           $ACR_LOGIN_SERVER/$IMAGE"
   echo ""
   echo "Deploy a bot with:"
   echo "  $0 OPRAH <bot_token> <owner_chat_id>"
@@ -188,32 +194,86 @@ done
 
 echo "Deploying $PERSONA_UPPER as $APP_NAME to Azure Container Apps..."
 
+# --- Ensure credential file share and ACA storage link ---
+SHARE_NAME="${PERSONA_LOWER}-claude"
+STORAGE_NAME="${PERSONA_LOWER}creds"
+STORAGE_KEY=$(az storage account keys list --account-name "$STORAGE_ACCOUNT" --resource-group "$RESOURCE_GROUP" --query "[0].value" -o tsv)
+
+echo "Ensuring file share: $SHARE_NAME"
+az storage share-rm create --storage-account "$STORAGE_ACCOUNT" --name "$SHARE_NAME" --quota 1 --output none 2>/dev/null || true
+
+echo "Linking storage to ACA environment..."
+az containerapp env storage set \
+  --name "$ENVIRONMENT" \
+  --resource-group "$RESOURCE_GROUP" \
+  --storage-name "$STORAGE_NAME" \
+  --azure-file-account-name "$STORAGE_ACCOUNT" \
+  --azure-file-account-key "$STORAGE_KEY" \
+  --azure-file-share-name "$SHARE_NAME" \
+  --access-mode ReadWrite \
+  --output none 2>/dev/null || true
+
+REVISION_SUFFIX="v$(date +%s)"
+
 if az containerapp show --name "$APP_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
   echo "Updating existing container app: $APP_NAME"
   az containerapp update \
     --name "$APP_NAME" \
     --resource-group "$RESOURCE_GROUP" \
     --image "$ACR_LOGIN_SERVER/$IMAGE" \
+    --revision-suffix "$REVISION_SUFFIX" \
     --set-env-vars $ENV_ARGS \
     --output none
 else
   echo "Creating new container app: $APP_NAME"
 
-  # Read persona file content and base64 encode for mounting
-  PERSONA_CONTENT=$(base64 < "$PERSONA_FILE")
+  cat > "/tmp/${APP_NAME}-deploy.yaml" <<DEPLOYYAML
+properties:
+  managedEnvironmentId: /subscriptions/$(az account show --query id -o tsv)/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.App/managedEnvironments/$ENVIRONMENT
+  configuration:
+    activeRevisionsMode: Single
+    secrets:
+      - name: acr-password
+        value: "$ACR_PASSWORD"
+    registries:
+      - server: $ACR_LOGIN_SERVER
+        username: $ACR_NAME
+        passwordSecretRef: acr-password
+  template:
+    revisionSuffix: "$REVISION_SUFFIX"
+    containers:
+      - name: $APP_NAME
+        image: $ACR_LOGIN_SERVER/$IMAGE
+        resources:
+          cpu: 1
+          memory: 2Gi
+        volumeMounts:
+          - volumeName: claude-creds
+            mountPath: /mnt/claude-creds
+    scale:
+      minReplicas: 1
+      maxReplicas: 1
+    volumes:
+      - name: claude-creds
+        storageName: $STORAGE_NAME
+        storageType: AzureFile
+DEPLOYYAML
 
   az containerapp create \
     --name "$APP_NAME" \
     --resource-group "$RESOURCE_GROUP" \
-    --environment "$ENVIRONMENT" \
-    --image "$ACR_LOGIN_SERVER/$IMAGE" \
-    --registry-server "$ACR_LOGIN_SERVER" \
-    --registry-username "$ACR_NAME" \
-    --registry-password "$ACR_PASSWORD" \
-    --cpu 1 --memory 2Gi \
-    --min-replicas 1 --max-replicas 1 \
-    --set-env-vars $ENV_ARGS \
+    --yaml "/tmp/${APP_NAME}-deploy.yaml" \
     --output none
+
+  # Set env vars separately (YAML and --set-env-vars don't mix well)
+  az containerapp update \
+    --name "$APP_NAME" \
+    --resource-group "$RESOURCE_GROUP" \
+    --set-env-vars $ENV_ARGS \
+    --revision-suffix "v$(date +%s)" \
+    --output none
+
+  rm -f "/tmp/${APP_NAME}-deploy.yaml"
 fi
 
 # --- Get app status ---
