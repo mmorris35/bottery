@@ -298,12 +298,42 @@ elif [[ "$AUTH_MODE" == "login" ]]; then
       echo "$CREDENTIALS_B64" | base64 -d > "$CREDS_FILE"
       echo "  Auth:     Credentials restored from env"
     fi
-    # Trigger token refresh if expired — CC refreshes on auth status check
-    if claude auth status &>/dev/null; then
-      echo "  Auth:     Token valid"
-    else
-      echo "  Auth:     Token may need refresh (CC will auto-refresh on first API call)"
-    fi
+    # Pre-refresh token if expired (CC does NOT auto-refresh on first API call)
+    node -e "
+(async () => {
+  const fs = require('fs');
+  const f = '$CREDS_FILE';
+  const creds = JSON.parse(fs.readFileSync(f, 'utf8'));
+  const oauth = creds.claudeAiOauth;
+  if (!oauth || !oauth.refreshToken) { console.log('  Auth:     No refresh token available'); return; }
+  if (oauth.expiresAt > Date.now() + 60000) { console.log('  Auth:     Token valid (expires ' + new Date(oauth.expiresAt).toISOString() + ')'); return; }
+  console.log('  Auth:     Token expired, refreshing...');
+  try {
+    const params = new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: '9d1c250a-e61b-44d9-88ed-5944d1962f5e',
+      refresh_token: oauth.refreshToken,
+    });
+    const r = await fetch('https://platform.claude.com/v1/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params,
+    });
+    const data = await r.json();
+    if (data.access_token) {
+      oauth.accessToken = data.access_token;
+      if (data.refresh_token) oauth.refreshToken = data.refresh_token;
+      oauth.expiresAt = Date.now() + ((data.expires_in || 3600) * 1000);
+      fs.writeFileSync(f, JSON.stringify(creds, null, 2));
+      console.log('  Auth:     Token refreshed (expires ' + new Date(oauth.expiresAt).toISOString() + ')');
+    } else {
+      console.error('  Auth:     Refresh failed: ' + JSON.stringify(data));
+    }
+  } catch (e) {
+    console.error('  Auth:     Refresh error: ' + e.message);
+  }
+})();
+" 2>&1
   elif claude auth status &>/dev/null; then
     echo "  Auth:     Already logged in"
   else
