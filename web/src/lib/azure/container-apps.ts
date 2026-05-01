@@ -3,11 +3,53 @@ import {
   AZURE_RESOURCE_GROUP,
   AZURE_ACR_NAME,
   AZURE_CONTAINER_ENV,
+  AZURE_STORAGE_ACCOUNT,
+  AZURE_STORAGE_KEY,
   ACR_IMAGE,
   BOT_APP_PREFIX,
 } from "../bottery/config";
 import { buildEnvVars } from "../bottery/env-builder";
 import type { Bot, BotConfig, BotStatus } from "../bottery/types";
+import {
+  ShareServiceClient,
+  StorageSharedKeyCredential,
+} from "@azure/storage-file-share";
+
+async function ensureBotStorage(personaName: string): Promise<string> {
+  const persona = personaName.toLowerCase();
+  const shareName = `${persona}-claude`;
+  const storageName = `${persona}creds`;
+
+  const cred = new StorageSharedKeyCredential(
+    AZURE_STORAGE_ACCOUNT,
+    AZURE_STORAGE_KEY
+  );
+  const serviceClient = new ShareServiceClient(
+    `https://${AZURE_STORAGE_ACCOUNT}.file.core.windows.net`,
+    cred
+  );
+  const shareClient = serviceClient.getShareClient(shareName);
+  await shareClient.createIfNotExists();
+
+  const client = getContainerAppsClient();
+  await client.managedEnvironmentsStorages.createOrUpdate(
+    AZURE_RESOURCE_GROUP,
+    AZURE_CONTAINER_ENV,
+    storageName,
+    {
+      properties: {
+        azureFile: {
+          accountName: AZURE_STORAGE_ACCOUNT,
+          accountKey: AZURE_STORAGE_KEY,
+          shareName,
+          accessMode: "ReadWrite",
+        },
+      },
+    }
+  );
+
+  return storageName;
+}
 
 function resolveStatus(
   provisioningState?: string,
@@ -117,6 +159,9 @@ export async function createBot(config: BotConfig): Promise<Bot> {
     value: s.value,
   }));
 
+  containerSecrets.push({ name: "acr-password", value: acrPassword });
+
+  const storageName = await ensureBotStorage(config.personaName);
   const revisionSuffix = `v${Math.floor(Date.now() / 1000)}`;
 
   const poller = await client.containerApps.beginCreateOrUpdate(
@@ -144,15 +189,25 @@ export async function createBot(config: BotConfig): Promise<Bot> {
             image: ACR_IMAGE,
             resources: { cpu: 1, memory: "2Gi" },
             env: envForContainer,
+            volumeMounts: [
+              {
+                volumeName: "claude-creds",
+                mountPath: "/home/botuser/.claude",
+              },
+            ],
           },
         ],
         scale: { minReplicas: 1, maxReplicas: 1 },
+        volumes: [
+          {
+            name: "claude-creds",
+            storageType: "AzureFile",
+            storageName,
+          },
+        ],
       },
     }
   );
-
-  // Add ACR password to secrets
-  containerSecrets.push({ name: "acr-password", value: acrPassword });
 
   await poller.pollUntilDone();
 
@@ -236,11 +291,35 @@ export async function updateBot(
 
 export async function deleteBot(name: string): Promise<void> {
   const client = getContainerAppsClient();
+  const persona = name.replace(BOT_APP_PREFIX, "");
+  const storageName = `${persona}creds`;
+  const shareName = `${persona}-claude`;
+
   const poller = await client.containerApps.beginDelete(
     AZURE_RESOURCE_GROUP,
     name
   );
   await poller.pollUntilDone();
+
+  try {
+    await client.managedEnvironmentsStorages.delete(
+      AZURE_RESOURCE_GROUP,
+      AZURE_CONTAINER_ENV,
+      storageName
+    );
+  } catch {}
+
+  try {
+    const cred = new StorageSharedKeyCredential(
+      AZURE_STORAGE_ACCOUNT,
+      AZURE_STORAGE_KEY
+    );
+    const serviceClient = new ShareServiceClient(
+      `https://${AZURE_STORAGE_ACCOUNT}.file.core.windows.net`,
+      cred
+    );
+    await serviceClient.getShareClient(shareName).deleteIfExists();
+  } catch {}
 }
 
 export async function restartBot(name: string): Promise<void> {

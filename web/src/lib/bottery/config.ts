@@ -6,6 +6,9 @@ export const AZURE_CONTAINER_ENV =
 export const AZURE_KEYVAULT_NAME =
   process.env.AZURE_KEYVAULT_NAME || "bottery-kv";
 export const AZURE_SUBSCRIPTION_ID = process.env.AZURE_SUBSCRIPTION_ID || "";
+export const AZURE_STORAGE_ACCOUNT =
+  process.env.AZURE_STORAGE_ACCOUNT || "botterycreds";
+export const AZURE_STORAGE_KEY = process.env.AZURE_STORAGE_KEY || "";
 
 export const BOT_APP_PREFIX = "bottery-";
 export const ACR_IMAGE = `${AZURE_ACR_NAME}.azurecr.io/bottery:latest`;
