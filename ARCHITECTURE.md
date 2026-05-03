@@ -1,203 +1,181 @@
-# Bottery Architecture
+# Bottery v2 Architecture
 
-Bottery is a bot factory that deploys Claude Code Telegram bots as containers. It supports two deployment targets — local Docker/OrbStack and Azure Container Apps — with an optional web UI for cloud management.
+Bottery v2 deploys Claude Code agents as systemd services on Ubuntu VMs. Each OS user is an auth boundary with one supervisor agent and N project/repo agents.
 
-## High-Level Architecture
+## Agent Hierarchy
 
 ```mermaid
 graph TB
-    subgraph "Deployment Targets"
-        direction TB
-        subgraph "Local Docker / OrbStack"
-            DS[deploy.sh] --> DI[Docker Image]
-            DI --> DC[Bot Container]
-            DC --- DV[(Volumes:<br/>logs + wiki)]
+    subgraph "Ubuntu VM (e.g. vm-bottery-0)"
+        subgraph "OS User: mike"
+            direction TB
+            US1["~/.claude/settings.json<br/><b>USER SCOPE</b><br/>Shared auth · Nellie MCP · Beer Can MCP<br/>Base skills + permissions"]
+
+            LT1["~/.claude/agents/lieutenant.md<br/><b>SUPERVISOR — PID 1</b><br/>Routes Beer Can tasks · Spawns/kills agents<br/>Purpose drift checks · Status aggregation"]
+
+            subgraph "Project Agents"
+                direction LR
+                PA1["~/github/repo-a/<br/>CLAUDE.md · .claude/settings.json<br/>Agent-specific MCP + permissions<br/>memory/"]
+                PA2["~/github/repo-b/<br/>CLAUDE.md · .claude/settings.json<br/>Agent-specific MCP + permissions<br/>memory/"]
+                PA3["~/bots/goofy/<br/>CLAUDE.md (persona)<br/>Telegram channel bot"]
+            end
+
+            US1 --- LT1
+            LT1 -->|manages| PA1
+            LT1 -->|manages| PA2
+            LT1 -->|manages| PA3
         end
-        subgraph "Azure Container Apps"
-            DA[deploy-azure.sh] --> ACR[Azure Container<br/>Registry]
-            WEB[Web UI<br/>Next.js 15] --> ACA_API[Azure SDK]
-            ACR --> ACA[ACA Environment<br/>bottery-env]
-            ACA_API --> ACA
-            ACA --- AFS[(Azure Files<br/>Credential Store)]
+
+        subgraph "OS User: danielle.guerra"
+            direction TB
+            US2["~/.claude/settings.json<br/><b>USER SCOPE</b>"]
+            LT2["SUPERVISOR"]
+            PA4["~/bots/yellie/<br/>Telegram persona bot"]
+
+            US2 --- LT2
+            LT2 -->|manages| PA4
         end
+
+        subgraph "OS User: shane.scott"
+            direction TB
+            US3["~/.claude/settings.json<br/><b>USER SCOPE</b>"]
+            LT3["SUPERVISOR"]
+            PA5["~/bots/scrogie/<br/>Telegram persona bot"]
+
+            US3 --- LT3
+            LT3 -->|manages| PA5
+        end
+    end
+
+    style US1 fill:#1a1a2e,color:#e0e0e0
+    style US2 fill:#1a1a2e,color:#e0e0e0
+    style US3 fill:#1a1a2e,color:#e0e0e0
+    style LT1 fill:#16213e,color:#e0e0e0
+    style LT2 fill:#16213e,color:#e0e0e0
+    style LT3 fill:#16213e,color:#e0e0e0
+```
+
+### Scope Boundaries
+
+| Scope | What lives here | Shared across |
+|-------|----------------|---------------|
+| **User** (`~/.claude/settings.json`) | OAuth creds, Nellie MCP, Beer Can MCP, base permissions | All agents under this OS user |
+| **Supervisor** (`~/.claude/agents/lieutenant.md`) | Fleet management, task routing, drift checks | Sees all projects under this user |
+| **Project** (`~/github/repo/.claude/settings.json`) | Agent persona, domain-specific MCP, repo-specific permissions, local memory | Only this agent |
+
+Claude Code's native settings hierarchy IS the isolation layer — no containers needed.
+
+## Deployment Architecture
+
+```mermaid
+graph TB
+    subgraph "VM: vm-bottery-0"
+        subgraph "systemd"
+            S1["bot-goofy.service<br/>User=mike"]
+            S2["bot-yellie.service<br/>User=danielle.guerra"]
+            S3["bot-scrogie.service<br/>User=shane.scott"]
+        end
+
+        subgraph "Per-service process tree"
+            direction LR
+            P1["script (PTY)"] --> P2["claude<br/>--channels --model"]
+            P2 --> P3["bun server.ts<br/>(Telegram MCP)"]
+        end
+
+        S1 --> P1
     end
 
     subgraph "External Services"
-        TG[Telegram Bot API]
-        CLAUDE[Anthropic API /<br/>Claude Team]
-        MCP_N[Nellie MCP]
-        MCP_B[Beer Can MCP]
-        MCP_TW[Teamwork MCP]
+        TG["Telegram Bot API"]
+        CLAUDE["Anthropic API<br/>(Claude Max / Team)"]
+        NELLIE["Nellie MCP<br/>(Semantic memory)"]
+        BC["Beer Can MCP<br/>(Agent IPC)"]
     end
 
-    DC <--> TG
-    DC <--> CLAUDE
-    ACA <--> TG
-    ACA <--> CLAUDE
-    DC -.-> MCP_N
-    DC -.-> MCP_B
-    ACA -.-> MCP_TW
-
-    ENTRA[Microsoft Entra ID] --> WEB
+    P3 <-->|Bot API| TG
+    P2 <-->|OAuth| CLAUDE
+    P2 -.->|SSE| NELLIE
+    P2 -.->|HTTP| BC
 ```
 
-## Container Internals
+### Process Tree (per bot)
 
-Every bot — local or cloud — runs the same Docker image. The entrypoint generates all configuration at startup from environment variables.
-
-```mermaid
-graph TD
-    EP[entrypoint.sh] --> V{Validate env vars}
-    V -->|TELEGRAM_BOT_TOKEN<br/>OWNER_CHAT_ID<br/>PERSONA_NAME| GEN[Generate CLAUDE.md]
-
-    GEN --> SEC[Append Security Policy<br/>Command Authority +<br/>Content Isolation]
-    SEC --> WIKI_SYS[Append Wiki System<br/>Instructions]
-
-    WIKI_SYS --> INIT{First boot?}
-    INIT -->|Yes| WIKI_INIT[Initialize Wiki<br/>index.md, log.md,<br/>purpose.md, sources.json]
-    INIT -->|No| CFG
-
-    WIKI_INIT --> CFG[Generate Config Files]
-
-    subgraph "Config Generation"
-        CFG --> S1[settings.json<br/>Permissions + MCP servers]
-        CFG --> S2[settings.local.json<br/>Disable cloud MCPs]
-        CFG --> S3[.mcp.json<br/>Project-level MCP]
-        CFG --> S4[access.json<br/>Owner allowlist + groups]
-        CFG --> S5[model.env + telegram .env]
-        CFG --> S6[~/.claude.json<br/>Skip onboarding]
-    end
-
-    S1 --> AUTH{Auth Mode?}
-    AUTH -->|API Key| AK[Export ANTHROPIC_API_KEY]
-    AUTH -->|Team/Max| OA[Restore or seed<br/>OAuth credentials]
-
-    AK --> RESUME{Session file<br/>exists?}
-    OA --> RESUME
-    RESUME -->|Yes| RS[--resume SESSION_ID]
-    RESUME -->|No| LAUNCH
-
-    RS --> LAUNCH["exec script -q ... -c<br/>&quot;claude --channels plugin:telegram&quot;"]
-```
-
-### Container File Layout
+Each systemd service runs four processes:
 
 ```
-/bot/                         # WORKDIR
-├── CLAUDE.md                 # Generated: persona + security + wiki instructions
-├── .claude/
-│   ├── settings.json         # Permissions, MCP servers, plugin config
-│   ├── settings.local.json   # Disabled cloud MCPs
-│   ├── commands/             # Custom slash commands (wiki-search, decide, etc.)
-│   ├── channels/telegram/
-│   │   ├── access.json       # DM allowlist + group config
-│   │   ├── model.env         # CLAUDE_MODEL
-│   │   └── .env              # TELEGRAM_BOT_TOKEN
-│   └── wiki/                 # Wiki system templates
-├── wiki/                     # Persistent wiki data
-│   ├── index.md
-│   ├── log.md
-│   ├── purpose.md
-│   ├── sources.json
-│   └── pages/                # User, topic, conversation pages
-├── logs/
-│   ├── session-id            # Session resume file
-│   └── PERSONA.log           # Full session transcript
-└── persona.md                # Mounted read-only (local Docker only)
-
-/home/botuser/.claude/        # User-level Claude config
-├── .credentials.json         # OAuth tokens (persisted via Azure Files)
-├── plugins/                  # Pre-baked Telegram plugin
-└── channels/telegram/.env    # Telegram token copy
-
-/etc/claude-code/
-└── managed-settings.json     # {"channelsEnabled": true} — required for Team auth
+systemd
+ └── start.sh
+      └── script -q -c "claude ..." session.log    # PTY wrapper (required)
+           └── claude --channels plugin:telegram     # Claude Code
+                └── bun server.ts                    # Telegram MCP server (plugin-managed)
 ```
 
-## ACA Deployment
+`script` provides a PTY — without it, CC enters `--print` mode and fails. The plugin manages its own bun process; never configure a manual `telegram` MCP server.
+
+## Auth & Model Pinning
 
 ```mermaid
 graph LR
-    subgraph "Azure Resource Group: bottery-rg"
-        subgraph "Container Registry"
-            ACR["botteryacr.azurecr.io<br/>bottery:latest"]
-        end
-
-        subgraph "ACA Environment: bottery-env"
-            WEB_APP["bottery-web<br/>(Next.js 15)"]
-            BOT1["bottery-yellie"]
-            BOT2["bottery-scrogie"]
-            BOT3["bottery-..."]
-        end
-
-        subgraph "Storage: botterycreds"
-            FS1["yellie-claude<br/>Azure File Share"]
-            FS2["scrogie-claude<br/>Azure File Share"]
-        end
+    subgraph "Auth (per OS user)"
+        OAUTH["claude auth login<br/>(one-time)"] --> CREDS["~/.claude/.credentials.json<br/>OAuth tokens auto-refresh"]
     end
 
-    ACR -->|Image pull| BOT1
-    ACR -->|Image pull| BOT2
-    ACR -->|Image pull| WEB_APP
+    subgraph "Model Quad-Lock (per bot)"
+        ML1["--model flag<br/>in start.sh"]
+        ML2["settings.json<br/>model field"]
+        ML3["model.env<br/>CLAUDE_MODEL"]
+        ML4["settings.json<br/>autoMode: off"]
+    end
 
-    BOT1 ---|Volume mount<br/>/home/botuser/.claude| FS1
-    BOT2 ---|Volume mount<br/>/home/botuser/.claude| FS2
-
-    ENTRA["Microsoft<br/>Entra ID"] -->|OAuth| WEB_APP
-    WEB_APP -->|Azure SDK| BOT1
-    WEB_APP -->|Azure SDK| BOT2
-
-    BOT1 <-->|Bot API| TG[Telegram]
-    BOT2 <-->|Bot API| TG
+    ML1 & ML2 & ML3 & ML4 -->|all must agree| PINNED["Model stays pinned<br/>No carousel downgrade"]
 ```
 
-Each bot container app runs with:
-- **1 CPU / 2 GiB memory**, single replica (min=1, max=1)
-- **Secrets**: telegram-bot-token, credentials-b64, acr-password (optionally teamwork-api-token)
-- **Env vars**: PERSONA_NAME, OWNER_CHAT_ID, CLAUDE_MODEL, PERSONA_CONTENT_B64, AUTH_MODE
+**Why quad-lock?** Without `autoMode: off`, CC's carousel silently downgrades the model (e.g. Opus → Haiku) when capacity is constrained.
 
-## Authentication Flow
+**Allowed models:** claude-haiku-4-5-20251001, claude-sonnet-4-6, claude-opus-4-6. **Never** claude-opus-4-7.
 
-```mermaid
-sequenceDiagram
-    participant Deploy as deploy-azure.sh /<br/>Web UI
-    participant ACA as Bot Container
-    participant CC as Claude Code
-    participant Claude as claude.com OAuth
-    participant AFS as Azure Files Volume
+## File Layout
 
-    Note over Deploy: Initial deployment
-    Deploy->>ACA: CREDENTIALS_B64 env var<br/>(base64 OAuth tokens)
+```
+/etc/claude-code/
+  managed-settings.json              # {"channelsEnabled": true} (system-wide)
 
-    Note over ACA: Container starts
-    ACA->>ACA: entrypoint.sh checks<br/>persisted vs env creds
+/home/USERNAME/
+  .local/bin/claude                  # CC binary
+  .bun/bin/bun                       # Bun runtime
+  .claude/
+    .credentials.json                # OAuth creds (from claude auth login)
+    settings.json                    # User scope: skip prompts, shared MCP
+    agents/
+      lieutenant.md                  # Supervisor agent definition
+    plugins/
+      installed_plugins.json         # Plugin registry
+      known_marketplaces.json        # Must point at THIS user's path
+      cache/.../telegram/0.0.6/      # Plugin code
+      marketplaces/.../              # Marketplace checkout
+    channels/telegram/
+      .env                           # TELEGRAM_BOT_TOKEN=...
+      access.json                    # dmPolicy + allowlist
+      model.env                      # CLAUDE_MODEL=...
+  .claude.json                       # Onboarding state + project trust entries
+  github/
+    repo-a/                          # Repo agent working directory
+      .claude/settings.json          # Project scope: agent-specific config
+      CLAUDE.md                      # Agent purpose + persona
+      memory/                        # Karpathy+ deep memory
+  bots/
+    botname/                         # Telegram persona bot
+      CLAUDE.md                      # Persona
+      start.sh                       # Launcher (script + claude)
+      .mcp.json                      # Empty: {"mcpServers":{}}
+      .git/                          # Required for CC project recognition
+      .claude/settings.json          # Model, permissions, enabledPlugins, autoMode
+      logs/
+        debug.log                    # CC debug output
+        session.log                  # PTY session capture
 
-    alt First boot (no persisted creds)
-        ACA->>ACA: Decode CREDENTIALS_B64 →<br/>~/.claude/.credentials.json
-    else Restart (persisted creds exist)
-        ACA->>ACA: Compare expiresAt timestamps
-        alt Persisted creds newer
-            ACA->>ACA: Keep persisted creds<br/>(auto-refreshed by CC)
-        else Env var creds newer
-            ACA->>ACA: Overwrite with env var creds
-        end
-    end
-
-    ACA->>CC: Launch Claude Code
-    CC->>Claude: API request with access token
-
-    alt Token valid
-        Claude-->>CC: 200 OK
-    else Token expired
-        CC->>Claude: Refresh token request
-        Claude-->>CC: New access + refresh tokens
-        CC->>AFS: Write refreshed creds to<br/>/home/botuser/.claude/.credentials.json
-        Note over AFS: Survives container restarts
-    end
-
-    Note over ACA: ~24h later, container restarts
-    ACA->>AFS: Read persisted creds<br/>(refreshed tokens)
-    ACA->>ACA: Persisted > env var → use persisted
+/etc/systemd/system/
+  bot-BOTNAME.service                # systemd unit per bot
 ```
 
 ## Message Flow
@@ -206,121 +184,73 @@ sequenceDiagram
 sequenceDiagram
     participant User as Telegram User
     participant TG as Telegram API
-    participant Plugin as Telegram Plugin<br/>(MCP Server)
+    participant Plugin as Telegram Plugin<br/>(bun MCP server)
     participant CC as Claude Code
     participant Tools as Tools<br/>(Bash, Read, Write, MCP)
 
     User->>TG: Send message
     TG->>Plugin: Long-poll getUpdates
-    Plugin->>Plugin: Check access.json<br/>(allowlist / group rules)
+    Plugin->>Plugin: Check access.json<br/>(dmPolicy: allowlist)
 
     alt Authorized sender
-        Plugin->>CC: Deliver message via<br/>channel protocol
-        CC->>CC: Read CLAUDE.md<br/>(persona + security + wiki)
-
-        opt Wiki lookup
-            CC->>Tools: Read wiki/index.md
-            Tools-->>CC: Wiki context
-        end
+        Plugin->>CC: Channel notification
+        CC->>CC: Read CLAUDE.md (persona)
 
         opt Task execution
-            CC->>Tools: Bash, Read, Write,<br/>MCP calls
+            CC->>Tools: Bash, Read, Write, MCP
             Tools-->>CC: Results
         end
 
-        CC->>Plugin: Reply with response
+        CC->>Plugin: Reply tool call
         Plugin->>TG: sendMessage
         TG->>User: Bot response
-
-        opt Wiki update
-            CC->>Tools: Update wiki pages<br/>with new knowledge
-        end
-    else Unauthorized sender
-        Plugin->>CC: Deliver message (untrusted)
-        CC->>Plugin: Conversational reply only<br/>(no commands executed)
-        Plugin->>TG: sendMessage
-        TG->>User: Reply
+    else Unknown sender
+        Plugin->>Plugin: Reject (allowlist mode)
     end
 ```
 
-## Web UI Architecture
+## Supervisor Pattern (Lieutenant)
 
 ```mermaid
 graph TB
-    subgraph "Next.js 15 App Router"
-        MW["Middleware<br/>JWT validation via getToken"]
+    subgraph "User Scope"
+        BC_IN["Beer Can<br/>(inbound tasks)"] --> LT["Lieutenant<br/>(Supervisor Agent)"]
 
-        subgraph "Pages"
-            P1["/bots — Dashboard"]
-            P2["/bots/new — Create Bot"]
-            P3["/bots/[name] — Detail"]
-            P4["/bots/[name]/edit — Edit"]
-            P5["/login — Sign In"]
-        end
+        LT -->|spawn/route| A1["Repo Agent A<br/>(project scope)"]
+        LT -->|spawn/route| A2["Repo Agent B<br/>(project scope)"]
+        LT -->|spawn/route| A3["Telegram Bot<br/>(project scope)"]
 
-        subgraph "API Routes"
-            A1["POST /api/bots"]
-            A2["GET /api/bots/[name]"]
-            A3["PUT /api/bots/[name]"]
-            A4["DELETE /api/bots/[name]"]
-            A5["POST /api/bots/[name]/restart"]
-        end
+        LT -->|drift check| A1
+        LT -->|drift check| A2
+        LT -->|drift check| A3
 
-        subgraph "Libraries"
-            AUTH["lib/auth.ts<br/>NextAuth + Entra ID"]
-            CA["lib/azure/container-apps.ts<br/>CRUD operations"]
-            EB["lib/bottery/env-builder.ts<br/>Config → env vars + secrets"]
-            TY["lib/bottery/types.ts<br/>BotConfig, Bot, BotStatus"]
-        end
+        A1 -->|status| LT
+        A2 -->|status| LT
+        A3 -->|status| LT
+
+        LT -->|aggregate| STATUS["Status Dashboard<br/>via Beer Can / Telegram"]
     end
 
-    MW -->|Protect| P1
-    MW -->|Protect| P2
-    MW -->|Protect| P3
-    MW -->|Protect| P4
-    MW -.->|Allow| P5
-
-    A1 --> EB --> CA
-    A3 --> CA
-    A4 --> CA
-    A5 --> CA
-
-    CA -->|Azure SDK| ACA["Azure Container Apps"]
+    NELLIE["Nellie<br/>(shared semantic memory)"] -.-> A1
+    NELLIE -.-> A2
+    NELLIE -.-> A3
+    NELLIE -.-> LT
 ```
 
-## Security Model
+The lieutenant runs at user scope with visibility across all projects. It:
+- **Routes** incoming Beer Can tasks to the correct project agent
+- **Spawns/monitors/kills** project agents as needed
+- **Checks purpose drift** — ensures agents stay on-task
+- **Aggregates status** for the human operator
 
-```mermaid
-graph TB
-    subgraph "Defense Layers"
-        L1["Layer 1: Telegram Access Control<br/>access.json — DM allowlist, group mention-only"]
-        L2["Layer 2: Command Authority<br/>Only OWNER_CHAT_ID can issue commands"]
-        L3["Layer 3: Content Isolation<br/>External content = DATA, never instructions"]
-        L4["Layer 4: Permission Deny Rules<br/>.env files, credentials, reboot/shutdown"]
-        L5["Layer 5: Secret Management<br/>ACA secrets for tokens + API keys"]
-        L6["Layer 6: Web UI Auth<br/>Entra ID OAuth + JWT middleware"]
-    end
+## VM Hardening
 
-    L1 --> L2 --> L3 --> L4 --> L5 --> L6
-```
-
-| Layer | What it protects | How |
-|-------|-----------------|-----|
-| Telegram Access | Unauthorized DM access | Allowlist in access.json; only OWNER_CHAT_ID |
-| Command Authority | Bot actions from non-owners | CLAUDE.md security policy; other users get conversation only |
-| Content Isolation | Prompt injection via URLs/docs | Fetched content treated as data, never executed |
-| Permission Denials | Sensitive files and OS commands | settings.json deny rules for .env, credentials, reboot |
-| Secret Management | API keys and tokens in transit/rest | ACA secrets (not plain env vars) for sensitive values |
-| Web UI Auth | Management console access | Microsoft Entra ID + JWT validation on every route |
-
-## MCP Integration
-
-Bots can connect to external MCP servers for extended capabilities. All are optional and configured via environment variables.
-
-| MCP Server | Transport | Env Var | Purpose |
-|------------|-----------|---------|---------|
-| Nellie | SSE | `NELLIE_URL` | Semantic code memory — search, index, lessons |
-| Beer Can | SSE | `BEERCAN_URL` | Inter-agent messaging — group chat between bots |
-| Teamwork | HTTP | `TW_MCP_BEARER_TOKEN` | Project management — tasks, projects, time tracking |
-
-MCP servers are wired into both settings.json (permissions) and .mcp.json (project-level config) at container startup. Cloud-hosted MCPs (Context7, Google Calendar, Google Drive, Cloudflare, Netlify) are explicitly disabled in settings.local.json to prevent unintended external connections.
+| Layer | Implementation |
+|-------|---------------|
+| Firewall | UFW — deny all incoming, allow SSH only |
+| Brute force | fail2ban on SSH |
+| SSH | Key-only auth, no root login, max 3 attempts |
+| Patching | unattended-upgrades with auto-reboot at 04:00 UTC |
+| Network | NSG locks SSH to admin WAN IP |
+| Isolation | OS users — filesystem + process isolation between employees |
+| Bot services | systemd Restart=always, RestartSec=10 — self-healing |
